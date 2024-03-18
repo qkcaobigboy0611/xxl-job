@@ -19,28 +19,35 @@ import java.util.Map;
 
 
 /**
- * xxl-job executor (for spring)
+ * xxlJobExecutor提供注册Job，初始化Server等功能
  *
- * @author xuxueli 2018-11-01 09:24:52
+ * 对于Spring项目的 执行器
+ *
+ * 初始化执行
  */
 public class XxlJobSpringExecutor extends XxlJobExecutor implements ApplicationContextAware, SmartInitializingSingleton, DisposableBean {
     private static final Logger logger = LoggerFactory.getLogger(XxlJobSpringExecutor.class);
 
 
-    // start
+    /**
+     * SmartInitializingSingleton接口的afterSingletonsInstantiated方法类似bean实例化执行后的回调函数，afterSingletonsInstantiated会在spring容器基本启动完成后执行。
+     * 此时所有的单例bean都已经初始化完成，可以在该类中做一些回调操作。
+     *
+     * XxlJobSpringExecutor，XxlJobSimpleExecutor继承自XxlJobExecutor，同时实现了SmartInitializingSingleton接口
+     * XxlJobSpringExecutor 在afterSingletonsInstantiated 方法中，完成了提取@xxlJob注解标注的方法，用于后续任务的执行。
+       调用父类方法中的start方法，初始化netty服务器。
+     */
     @Override
     public void afterSingletonsInstantiated() {
 
-        // init JobHandler Repository
-        /*initJobHandlerRepository(applicationContext);*/
-
-        // init JobHandler Repository (for method)
+        // 初始化 Spring里面的方法的处理器
+        // 项目启动的时候，已经将所有bean对象放到上下文applicationContext中
         initJobHandlerMethodRepository(applicationContext);
 
-        // refresh GlueFactory
+        // 刷新运行工厂
         GlueFactory.refreshInstance(1);
 
-        // super start
+        // 初始化注册，也就是初始化netty服务器
         try {
             super.start();
         } catch (Exception e) {
@@ -77,11 +84,15 @@ public class XxlJobSpringExecutor extends XxlJobExecutor implements ApplicationC
         }
     }*/
 
+    /**
+     * 初始化处理器上下文
+     * 获取 每一个bean里面的方法对象
+     */
     private void initJobHandlerMethodRepository(ApplicationContext applicationContext) {
         if (applicationContext == null) {
             return;
         }
-        // init job handler from method
+        // 获取所有单列bean name  false：表示只获取单例的
         String[] beanDefinitionNames = applicationContext.getBeanNamesForType(Object.class, false, true);
         for (String beanDefinitionName : beanDefinitionNames) {
 
@@ -95,7 +106,7 @@ public class XxlJobSpringExecutor extends XxlJobExecutor implements ApplicationC
                 bean = applicationContext.getBean(beanDefinitionName);
             }
 
-            // filter method
+            // 从所有的spring管理器里面有 xxkjob注解 的所有方法
             Map<Method, XxlJob> annotatedMethods = null;   // referred to ：org.springframework.context.event.EventListenerMethodProcessor.processBean
             try {
                 annotatedMethods = MethodIntrospector.selectMethods(bean.getClass(),
@@ -112,11 +123,12 @@ public class XxlJobSpringExecutor extends XxlJobExecutor implements ApplicationC
                 continue;
             }
 
-            // generate and regist method job handler
+            // 遍历每个xxljob注解的方法
             for (Map.Entry<Method, XxlJob> methodXxlJobEntry : annotatedMethods.entrySet()) {
                 Method executeMethod = methodXxlJobEntry.getKey();
+                // 注解对象
                 XxlJob xxlJob = methodXxlJobEntry.getValue();
-                // regist
+                // xxljob是注解 bean是类对象，executeMethod 方法对象
                 registJobHandler(xxlJob, bean, executeMethod);
             }
 

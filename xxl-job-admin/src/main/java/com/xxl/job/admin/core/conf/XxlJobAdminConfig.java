@@ -14,9 +14,8 @@ import javax.sql.DataSource;
 import java.util.Arrays;
 
 /**
- * xxl-job config
+ * 启动时通过该配置类对xxlJobScheduler进行实例化
  *
- * @author xuxueli 2017-04-28
  */
 
 @Component
@@ -34,8 +33,10 @@ public class XxlJobAdminConfig implements InitializingBean, DisposableBean {
 
     @Override
     public void afterPropertiesSet() throws Exception {
+        // 利用静态声明的只会加载一次的特性，初始化一个单例对象
         adminConfig = this;
 
+        // 初始化xxjob调度 初始化定时任务
         xxlJobScheduler = new XxlJobScheduler();
         xxlJobScheduler.init();
     }

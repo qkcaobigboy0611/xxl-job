@@ -43,18 +43,26 @@ public class ExecutorBizImpl implements ExecutorBiz {
         return ReturnT.SUCCESS;
     }
 
+    /**
+     *
+     * @param triggerParam 触发对象，就是哪个方法需要触发
+     *                     触发任务
+     * @return
+     */
     @Override
     public ReturnT<String> run(TriggerParam triggerParam) {
-        // load old：jobHandler + jobThread
+        // 根据任务ID 从map里面获取任务线程
         JobThread jobThread = XxlJobExecutor.loadJobThread(triggerParam.getJobId());
+        // 加了xxljob注解的方法对象   第一次执行为空
         IJobHandler jobHandler = jobThread!=null?jobThread.getHandler():null;
         String removeOldReason = null;
 
-        // valid：jobHandler + jobThread
+        // 运行模式， 根据 web端  传过来的信息
         GlueTypeEnum glueTypeEnum = GlueTypeEnum.match(triggerParam.getGlueType());
         if (GlueTypeEnum.BEAN == glueTypeEnum) {
 
-            // new jobhandler
+            // todo getExecutorHandler 其实就是我们在页面创建任务时配置的JobHandler
+            // todo loadJobHandler()方法 是从初始化的时候注册进来中获取 我们配置的hanler
             IJobHandler newJobHandler = XxlJobExecutor.loadJobHandler(triggerParam.getExecutorHandler());
 
             // valid old jobThread
@@ -118,7 +126,8 @@ public class ExecutorBizImpl implements ExecutorBiz {
             return new ReturnT<String>(ReturnT.FAIL_CODE, "glueType[" + triggerParam.getGlueType() + "] is not valid.");
         }
 
-        // executor block strategy
+        // 执行的 阻塞处理策略 判断是否有异常
+        // 不为空的话，不是第一次
         if (jobThread != null) {
             ExecutorBlockStrategyEnum blockStrategy = ExecutorBlockStrategyEnum.match(triggerParam.getExecutorBlockStrategy(), null);
             if (ExecutorBlockStrategyEnum.DISCARD_LATER == blockStrategy) {
@@ -138,12 +147,12 @@ public class ExecutorBizImpl implements ExecutorBiz {
             }
         }
 
-        // replace thread (new or exists invalid)
+        // todo 初始化jobThread，不断的扫描，下次进来这个方法的时候，上面的loadJobThread就可以拿到这个方法了
         if (jobThread == null) {
             jobThread = XxlJobExecutor.registJobThread(triggerParam.getJobId(), jobHandler, removeOldReason);
         }
 
-        // push data to queue
+        // todo 入队列
         ReturnT<String> pushResult = jobThread.pushTriggerQueue(triggerParam);
         return pushResult;
     }

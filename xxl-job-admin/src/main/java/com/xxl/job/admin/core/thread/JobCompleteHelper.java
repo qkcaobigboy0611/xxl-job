@@ -15,9 +15,9 @@ import java.util.List;
 import java.util.concurrent.*;
 
 /**
- * job lose-monitor instance
- *
- * @author xuxueli 2015-9-1 18:05:56
+ * 任务完成线程
+ * 处理任务结果的线程 回调监听器
+ * 就是将超过10分钟还在执行的任务状态更改为 失败
  */
 public class JobCompleteHelper {
 	private static Logger logger = LoggerFactory.getLogger(JobCompleteHelper.class);
@@ -28,13 +28,14 @@ public class JobCompleteHelper {
 	}
 
 	// ---------------------- monitor ----------------------
-
+	// 回调函数线程池
 	private ThreadPoolExecutor callbackThreadPool = null;
+	// 定义监控线程
 	private Thread monitorThread;
 	private volatile boolean toStop = false;
 	public void start(){
 
-		// for callback
+		// 定义回调函数线程池
 		callbackThreadPool = new ThreadPoolExecutor(
 				2,
 				20,
@@ -56,14 +57,15 @@ public class JobCompleteHelper {
 				});
 
 
-		// for monitor
+		// 定义监控线程
 		monitorThread = new Thread(new Runnable() {
 
 			@Override
 			public void run() {
 
-				// wait for JobTriggerPoolHelper-init
+				// 等触发线程池创建之后，监控线程池才创建
 				try {
+					// 所以休眠一段时间
 					TimeUnit.MILLISECONDS.sleep(50);
 				} catch (InterruptedException e) {
 					if (!toStop) {
@@ -71,21 +73,26 @@ public class JobCompleteHelper {
 					}
 				}
 
-				// monitor
+				// 监控日志
 				while (!toStop) {
 					try {
-						// 任务结果丢失处理：调度记录停留在 "运行中" 状态超过10min，且对应执行器心跳注册失败不在线，则将本地调度主动标记失败；
+						// 任务结果丢失处理：调度记录停留在 "运行中" 状态超过10min，
+						//且对应执行器心跳注册失败不在线，则将本地调度主动标记失败；
 						Date losedTime = DateUtil.addMinutes(new Date(), -10);
+						// 从xxl-job-log 表中获取数据，是触发成功，但是正在执行的日志
 						List<Long> losedJobIds  = XxlJobAdminConfig.getAdminConfig().getXxlJobLogDao().findLostJobIds(losedTime);
 
 						if (losedJobIds!=null && losedJobIds.size()>0) {
+							// 遍历每一个日志
 							for (Long logId: losedJobIds) {
 
 								XxlJobLog jobLog = new XxlJobLog();
 								jobLog.setId(logId);
 
 								jobLog.setHandleTime(new Date());
+								// 更改执行状态为失败
 								jobLog.setHandleCode(ReturnT.FAIL_CODE);
+								// 执行失败 日志
 								jobLog.setHandleMsg( I18nUtil.getString("joblog_lost_fail") );
 
 								XxlJobCompleter.updateHandleInfoAndFinish(jobLog);
@@ -135,12 +142,16 @@ public class JobCompleteHelper {
 
 	// ---------------------- helper ----------------------
 
+	/**
+	 * 我们项目调用 web实现 回调功能
+	 */
 	public ReturnT<String> callback(List<HandleCallbackParam> callbackParamList) {
-
+		// 我们项目初始化的时候 就创建这个线程池
 		callbackThreadPool.execute(new Runnable() {
 			@Override
 			public void run() {
 				for (HandleCallbackParam handleCallbackParam: callbackParamList) {
+					// 遍历 每一个回调的  信息
 					ReturnT<String> callbackResult = callback(handleCallbackParam);
 					logger.debug(">>>>>>>>> JobApiController.callback {}, handleCallbackParam={}, callbackResult={}",
 							(callbackResult.getCode()== ReturnT.SUCCESS_CODE?"success":"fail"), handleCallbackParam, callbackResult);
@@ -152,16 +163,17 @@ public class JobCompleteHelper {
 	}
 
 	private ReturnT<String> callback(HandleCallbackParam handleCallbackParam) {
-		// valid log item
+		// 从xxl_job_log 获取当前日志的信息
 		XxlJobLog log = XxlJobAdminConfig.getAdminConfig().getXxlJobLogDao().load(handleCallbackParam.getLogId());
 		if (log == null) {
 			return new ReturnT<String>(ReturnT.FAIL_CODE, "log item not found.");
 		}
+		// 避免重复回调
 		if (log.getHandleCode() > 0) {
 			return new ReturnT<String>(ReturnT.FAIL_CODE, "log repeate callback.");     // avoid repeat callback, trigger child job etc
 		}
 
-		// handle msg
+		// 执行结果
 		StringBuffer handleMsg = new StringBuffer();
 		if (log.getHandleMsg()!=null) {
 			handleMsg.append(log.getHandleMsg()).append("<br>");
@@ -173,7 +185,9 @@ public class JobCompleteHelper {
 		// success, save log
 		log.setHandleTime(new Date());
 		log.setHandleCode(handleCallbackParam.getHandleCode());
+		// 执行结果
 		log.setHandleMsg(handleMsg.toString());
+		// 更新日志
 		XxlJobCompleter.updateHandleInfoAndFinish(log);
 
 		return ReturnT.SUCCESS;

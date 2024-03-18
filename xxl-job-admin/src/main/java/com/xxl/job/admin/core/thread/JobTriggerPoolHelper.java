@@ -20,13 +20,16 @@ public class JobTriggerPoolHelper {
 
     // ---------------------- trigger pool ----------------------
 
-    // fast/slow thread pool
+    // todo 快线程池
     private ThreadPoolExecutor fastTriggerPool = null;
+    // todo 慢线程池
     private ThreadPoolExecutor slowTriggerPool = null;
 
     public void start(){
+        //todo 最大200线程，最多处理1000任务
         fastTriggerPool = new ThreadPoolExecutor(
                 10,
+                // 最大线程数
                 XxlJobAdminConfig.getAdminConfig().getTriggerPoolFastMax(),
                 60L,
                 TimeUnit.SECONDS,
@@ -38,8 +41,11 @@ public class JobTriggerPoolHelper {
                     }
                 });
 
+        //todo 最大100线程，最多处理2000任务
+        // 一分钟内容超时超过10次，则采用慢触发器执行
         slowTriggerPool = new ThreadPoolExecutor(
                 10,
+                // 最大线程数
                 XxlJobAdminConfig.getAdminConfig().getTriggerPoolSlowMax(),
                 60L,
                 TimeUnit.SECONDS,
@@ -52,9 +58,9 @@ public class JobTriggerPoolHelper {
                 });
     }
 
-
+    // 停止当前线程池
     public void stop() {
-        //triggerPool.shutdown();
+        //todo 分析一下停止线程池的写法
         fastTriggerPool.shutdownNow();
         slowTriggerPool.shutdownNow();
         logger.info(">>>>>>>>> xxl-job trigger thread pool shutdown success.");
@@ -63,11 +69,20 @@ public class JobTriggerPoolHelper {
 
     // job timeout count
     private volatile long minTim = System.currentTimeMillis()/60000;     // ms > min
+    // todo 存放每个任务的执行慢次数，60秒后自动清空该容器, key 是任务id   value 是  次数
     private volatile ConcurrentMap<Integer, AtomicInteger> jobTimeoutCountMap = new ConcurrentHashMap<>();
 
 
     /**
-     * add trigger
+     * todo 主动触发一次任务
+     * todo 在界面中，点击任务的执行，会触发一次任务，后台会调用JobTriggerPoolHelper.trigger() 任务。
+     * todo 该方法会将任务给提交一个线程池，在线程池中调用XXlJobTrigger.trigger
+     *
+     * add trigger 新增 触发器
+     * 执行任务时，首先判断这个任务是否是个慢任务，
+     * 如果是个慢任务且慢执行的次数超过了10次将会使用slowTriggerPool慢线程池，
+     * 它的统计周期为60秒，这里是个优化点，当有大量的任务被执行时，
+     * 为了防止任务被阻塞，尽可能的会先让执行快的任务优先执行。
      */
     public void addTrigger(final int jobId,
                            final TriggerTypeEnum triggerType,
@@ -83,7 +98,7 @@ public class JobTriggerPoolHelper {
             triggerPool_ = slowTriggerPool;
         }
 
-        // trigger
+        // todo 执行触发器线程 线程池执行
         triggerPool_.execute(new Runnable() {
             @Override
             public void run() {
@@ -91,7 +106,7 @@ public class JobTriggerPoolHelper {
                 long start = System.currentTimeMillis();
 
                 try {
-                    // do trigger
+                    // todo 开始任务触发
                     XxlJobTrigger.trigger(jobId, triggerType, failRetryCount, executorShardingParam, executorParam, addressList);
                 } catch (Exception e) {
                     logger.error(e.getMessage(), e);
@@ -104,7 +119,7 @@ public class JobTriggerPoolHelper {
                         jobTimeoutCountMap.clear();
                     }
 
-                    // incr timeout-count-map
+                    // todo 默认先使用快线程池，但当一分钟以内任务超过10次执行时间超过500ms，则加入慢线程池执行
                     long cost = System.currentTimeMillis()-start;
                     if (cost > 500) {       // ob-timeout threshold 500ms
                         AtomicInteger timeoutCount = jobTimeoutCountMap.putIfAbsent(jobId, new AtomicInteger(1));

@@ -25,13 +25,19 @@ public class JobRegistryHelper {
 		return instance;
 	}
 
+	// 定义 注册或者移除 线程池
 	private ThreadPoolExecutor registryOrRemoveThreadPool = null;
+	// 注册 监控线程
 	private Thread registryMonitorThread;
 	private volatile boolean toStop = false;
 
+	/**
+	 * 创建注册线程池
+	 * 创建并启动注册 监控线程
+	 */
 	public void start(){
 
-		// for registry or remove
+		// 创建线程池
 		registryOrRemoveThreadPool = new ThreadPoolExecutor(
 				2,
 				10,
@@ -52,28 +58,35 @@ public class JobRegistryHelper {
 					}
 				});
 
-		// for monitor
+		// 创建线程 当前线程的目的就是：更新xxl_job_group表中自动注册的执行器
+		// 并且删除xxl_job_registry中已经过时的数据
 		registryMonitorThread = new Thread(new Runnable() {
 			@Override
 			public void run() {
 				while (!toStop) {
 					try {
-						// auto registry group
+						// 查询数据库全部的 注册类型为自动注册的执行器xxl_job_group
 						List<XxlJobGroup> groupList = XxlJobAdminConfig.getAdminConfig().getXxlJobGroupDao().findByAddressType(0);
 						if (groupList!=null && !groupList.isEmpty()) {
 
-							// remove dead address (admin/executor)
+							// 查询出过时的地址，超时时间就是项目配置的，也就是查询  xxl_job_registry  ，将过时的都查询出来(sql操作)
 							List<Integer> ids = XxlJobAdminConfig.getAdminConfig().getXxlJobRegistryDao().findDead(RegistryConfig.DEAD_TIMEOUT, new Date());
 							if (ids!=null && ids.size()>0) {
+								// 删除超时的数据 xxl_job_registry
 								XxlJobAdminConfig.getAdminConfig().getXxlJobRegistryDao().removeDead(ids);
 							}
 
-							// fresh online address (admin/executor)
+							// 刷新自动注册的最新地址
 							HashMap<String, List<String>> appAddressMap = new HashMap<String, List<String>>();
+							// 查询出没有超时的 数据 xxl_job_registry
 							List<XxlJobRegistry> list = XxlJobAdminConfig.getAdminConfig().getXxlJobRegistryDao().findAll(RegistryConfig.DEAD_TIMEOUT, new Date());
+							// 往appAddressMap 集合里面存放数据
+							// 从查询出没有超时的 全部数据 xxl_job_registry，整理之后放到appAddressMap 集合
 							if (list != null) {
 								for (XxlJobRegistry item: list) {
+									// 如果是自动注册
 									if (RegistryConfig.RegistType.EXECUTOR.name().equals(item.getRegistryGroup())) {
+										// 根据APP名称获取最新自动注册地址
 										String appname = item.getRegistryKey();
 										List<String> registryList = appAddressMap.get(appname);
 										if (registryList == null) {
@@ -88,8 +101,10 @@ public class JobRegistryHelper {
 								}
 							}
 
-							// fresh group address
+							// 这个里面查询出来的全部的 自动注册的数据，要更新他们的地址
+							// groupList 查询数据库全部的 注册类型为 自动注册的 执行器（项目）xxl_job_group
 							for (XxlJobGroup group: groupList) {
+								// 根据APP名称获取最新自动注册地址
 								List<String> registryList = appAddressMap.get(group.getAppname());
 								String addressListStr = null;
 								if (registryList!=null && !registryList.isEmpty()) {
@@ -123,6 +138,7 @@ public class JobRegistryHelper {
 				logger.info(">>>>>>>>>>> xxl-job, job registry monitor thread stop");
 			}
 		});
+		// 后台运行
 		registryMonitorThread.setDaemon(true);
 		registryMonitorThread.setName("xxl-job, admin JobRegistryMonitorHelper-registryMonitorThread");
 		registryMonitorThread.start();
@@ -146,6 +162,9 @@ public class JobRegistryHelper {
 
 	// ---------------------- helper ----------------------
 
+	/**
+	 * 我们项目 调用  web项目  实现注册功能
+	 */
 	public ReturnT<String> registry(RegistryParam registryParam) {
 
 		// valid
@@ -155,7 +174,7 @@ public class JobRegistryHelper {
 			return new ReturnT<String>(ReturnT.FAIL_CODE, "Illegal Argument.");
 		}
 
-		// async execute
+		// 异步执行注册功能
 		registryOrRemoveThreadPool.execute(new Runnable() {
 			@Override
 			public void run() {

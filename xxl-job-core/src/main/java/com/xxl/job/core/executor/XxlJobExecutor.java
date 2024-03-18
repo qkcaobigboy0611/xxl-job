@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Created by xuxueli on 2016/3/2 21:14.
+ * 定时任务执行器
  */
 public class XxlJobExecutor  {
     private static final Logger logger = LoggerFactory.getLogger(XxlJobExecutor.class);
@@ -65,22 +65,30 @@ public class XxlJobExecutor  {
 
 
     // ---------------------- start + stop ----------------------
+
+    /**
+     * 开始执行任务
+     * @throws Exception
+     */
     public void start() throws Exception {
 
-        // init logpath
+        // 先初始化保存日志路径 这个是自定义日志路径
         XxlJobFileAppender.initLogPath(logPath);
 
-        // init invoker, admin-client
+        // 封装调度中心请求路径，用于访问调度中心
         initAdminBizList(adminAddresses, accessToken);
 
 
-        // init JobLogFileCleanThread
+        // 开始删除 超过保留日期的全部日志
         JobLogFileCleanThread.getInstance().start(logRetentionDays);
 
-        // init TriggerCallbackThread
+        // 触发回调函数 线程，该线程主要是任务执行器执行完后，将结果回调给调度中心
+        // todo ???
         TriggerCallbackThread.getInstance().start();
 
-        // init executor-server
+        // init executor-server 将当前项目的地址注册到  web项目里面
+        // 任务执行器核心代码，基于Netty编写Server端，todo 与调度中心进行通信
+        //todo (1)使用netty开放端口，等待服务端调用,(2)注册到服务端(心跳30s)，(3)向服务端申请剔除服务
         initEmbedServer(address, ip, port, appname, accessToken);
     }
 
@@ -116,7 +124,10 @@ public class XxlJobExecutor  {
 
 
     // ---------------------- admin-client (rpc invoker) ----------------------
+    // 封装调度中心请求路径，用于访问调度中心
     private static List<AdminBiz> adminBizList;
+    // adminAddresses : 服务器地址
+    // todo 在执行器启动时会读取上述配置，当存在任务调度中心地址时，会依次向任务调度中心注册其地址。
     private void initAdminBizList(String adminAddresses, String accessToken) throws Exception {
         if (adminAddresses!=null && adminAddresses.trim().length()>0) {
             for (String address: adminAddresses.trim().split(",")) {
@@ -127,6 +138,7 @@ public class XxlJobExecutor  {
                     if (adminBizList == null) {
                         adminBizList = new ArrayList<AdminBiz>();
                     }
+                    // 将admin地址以及token添加adminBiz中
                     adminBizList.add(adminBiz);
                 }
             }
@@ -140,10 +152,20 @@ public class XxlJobExecutor  {
     // ---------------------- executor-server (rpc provider) ----------------------
     private EmbedServer embedServer = null;
 
+    /**
+     * 初始化服务器 执行内嵌服务
+     * @param address
+     * @param ip
+     * @param port
+     * @param appname
+     * @param accessToken
+     * @throws Exception
+     */
     private void initEmbedServer(String address, String ip, int port, String appname, String accessToken) throws Exception {
 
         // fill ip port
         port = port>0?port: NetUtil.findAvailablePort(9999);
+        // todo 获取所有在线的机器IP
         ip = (ip!=null&&ip.trim().length()>0)?ip: IpUtil.getIp();
 
         // generate address
@@ -174,7 +196,7 @@ public class XxlJobExecutor  {
     }
 
 
-    // ---------------------- job handler repository ----------------------
+    // todo 初始化注册进来
     private static ConcurrentMap<String, IJobHandler> jobHandlerRepository = new ConcurrentHashMap<String, IJobHandler>();
     public static IJobHandler loadJobHandler(String name){
         return jobHandlerRepository.get(name);
@@ -183,18 +205,22 @@ public class XxlJobExecutor  {
         logger.info(">>>>>>>>>>> xxl-job register jobhandler success, name:{}, jobHandler:{}", name, jobHandler);
         return jobHandlerRepository.put(name, jobHandler);
     }
+
+    /**
+     * xxljob是注解 bean是类对象 executeMethod是方法对象
+     */
     protected void registJobHandler(XxlJob xxlJob, Object bean, Method executeMethod){
         if (xxlJob == null) {
             return;
         }
-
+        // 获取注解的值，注解的名称
         String name = xxlJob.value();
-        //make and simplify the variables since they'll be called several times later
         Class<?> clazz = bean.getClass();
         String methodName = executeMethod.getName();
         if (name.trim().length() == 0) {
             throw new RuntimeException("xxl-job method-jobhandler name invalid, for[" + clazz + "#" + methodName + "] .");
         }
+        // 根据注解的值名称获取处理器
         if (loadJobHandler(name) != null) {
             throw new RuntimeException("xxl-job jobhandler[" + name + "] naming conflicts.");
         }
@@ -215,6 +241,7 @@ public class XxlJobExecutor  {
         Method initMethod = null;
         Method destroyMethod = null;
 
+        // 在当前方法之前先初始化其他方法
         if (xxlJob.init().trim().length() > 0) {
             try {
                 initMethod = clazz.getDeclaredMethod(xxlJob.init());
@@ -232,12 +259,15 @@ public class XxlJobExecutor  {
             }
         }
 
-        // registry jobhandler
+        // 注册表作业处理程序 name：是注解的名称
         registJobHandler(name, new MethodJobHandler(bean, executeMethod, initMethod, destroyMethod));
 
     }
 
 
+    /**
+     * 为后面客户端/run接口 创建任务线程，以供后面使用
+     */
     // ---------------------- job thread repository ----------------------
     private static ConcurrentMap<Integer, JobThread> jobThreadRepository = new ConcurrentHashMap<Integer, JobThread>();
     public static JobThread registJobThread(int jobId, IJobHandler handler, String removeOldReason){

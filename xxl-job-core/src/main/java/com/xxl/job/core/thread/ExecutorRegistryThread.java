@@ -43,6 +43,7 @@ public class ExecutorRegistryThread {
                 while (!toStop) {
                     try {
                         RegistryParam registryParam = new RegistryParam(RegistryConfig.RegistType.EXECUTOR.name(), appname, address);
+                        // getAdminBizList 获取所有服务器地址，循环，只要有一个服务器注册 更新xxl_job_registry表成功之后就停止循环
                         for (AdminBiz adminBiz: XxlJobExecutor.getAdminBizList()) {
                             try {
                                 ReturnT<String> registryResult = adminBiz.registry(registryParam);

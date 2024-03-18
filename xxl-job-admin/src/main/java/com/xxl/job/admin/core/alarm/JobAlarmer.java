@@ -35,7 +35,7 @@ public class JobAlarmer implements ApplicationContextAware, InitializingBean {
     }
 
     /**
-     * job alarm
+     * 发送email
      *
      * @param info
      * @param jobLog

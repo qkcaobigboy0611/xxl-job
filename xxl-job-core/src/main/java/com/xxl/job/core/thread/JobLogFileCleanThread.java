@@ -13,9 +13,8 @@ import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
 /**
- * job file clean thread
- *
- * @author xuxueli 2017-12-29 16:23:43
+ *  我们项目里面调用的
+ *  日志文件清除 线程，就是日志目录里面的日志如果超过设置的 保留时间，就删除
  */
 public class JobLogFileCleanThread {
     private static Logger logger = LoggerFactory.getLogger(JobLogFileCleanThread.class);
@@ -39,7 +38,7 @@ public class JobLogFileCleanThread {
             public void run() {
                 while (!toStop) {
                     try {
-                        // clean log dir, over logRetentionDays
+                        // 遍历 基础日志目录下的 日志文件
                         File[] childDirs = new File(XxlJobFileAppender.getLogPath()).listFiles();
                         if (childDirs!=null && childDirs.length>0) {
 
@@ -73,8 +72,9 @@ public class JobLogFileCleanThread {
                                 if (logFileCreateDate == null) {
                                     continue;
                                 }
-
+                                // 如果今天时间和日志创建时间之差  大于设置的日志保留时间
                                 if ((todayDate.getTime()-logFileCreateDate.getTime()) >= logRetentionDays * (24 * 60 * 60 * 1000) ) {
+                                    // 递归删除文件
                                     FileUtil.deleteRecursively(childFile);
                                 }
 

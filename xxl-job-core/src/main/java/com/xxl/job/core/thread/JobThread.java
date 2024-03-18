@@ -21,8 +21,10 @@ import java.util.concurrent.*;
 
 
 /**
- * handler thread
- * @author xuxueli 2016-1-16 19:52:47
+ * handler thread  任务 线程
+ * 执行一个任务的线程对象
+ * web 调用我们的项目，进行执行任务的时候，创建这个类的对象
+ * 在我们的项目里面进行创建
  */
 public class JobThread extends Thread{
 	private static Logger logger = LoggerFactory.getLogger(JobThread.class);
@@ -111,6 +113,7 @@ public class JobThread extends Thread{
             TriggerParam triggerParam = null;
             try {
 				// to check toStop signal, we need cycle, so wo cannot use queue.take(), instand of poll(timeout)
+				// 不断从队列中获取
 				triggerParam = triggerQueue.poll(3L, TimeUnit.SECONDS);
 				if (triggerParam!=null) {
 					running = true;
@@ -142,7 +145,7 @@ public class JobThread extends Thread{
 
 									// init job context
 									XxlJobContext.setXxlJobContext(xxlJobContext);
-
+									// todo 真正的调度 执行
 									handler.execute();
 									return true;
 								}
@@ -206,7 +209,7 @@ public class JobThread extends Thread{
                 if(triggerParam != null) {
                     // callback handler info
                     if (!toStop) {
-                        // commonm
+                        // 触发回调函数 线程，该线程主要是任务执行器执行完后，将结果回调给调度中心，将回调信息放到队列里面
                         TriggerCallbackThread.pushCallBack(new HandleCallbackParam(
                         		triggerParam.getLogId(),
 								triggerParam.getLogDateTime(),
@@ -214,7 +217,7 @@ public class JobThread extends Thread{
 								XxlJobContext.getXxlJobContext().getHandleMsg() )
 						);
                     } else {
-                        // is killed
+                        // 线程停止了 调用回调函数，处理线程
                         TriggerCallbackThread.pushCallBack(new HandleCallbackParam(
                         		triggerParam.getLogId(),
 								triggerParam.getLogDateTime(),

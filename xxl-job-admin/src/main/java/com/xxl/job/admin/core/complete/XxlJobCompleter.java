@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
 import java.text.MessageFormat;
 
 /**
- * @author xuxueli 2020-10-30 20:43:10
+ * 关于日志信息 的处理
  */
 public class XxlJobCompleter {
     private static Logger logger = LoggerFactory.getLogger(XxlJobCompleter.class);
@@ -27,10 +27,10 @@ public class XxlJobCompleter {
      */
     public static int updateHandleInfoAndFinish(XxlJobLog xxlJobLog) {
 
-        // finish
+        // 触发子任务
         finishJob(xxlJobLog);
 
-        // text最大64kb 避免长度过长
+        // todo text最大64kb 避免长度过长
         if (xxlJobLog.getHandleMsg().length() > 15000) {
             xxlJobLog.setHandleMsg( xxlJobLog.getHandleMsg().substring(0, 15000) );
         }
@@ -56,7 +56,7 @@ public class XxlJobCompleter {
                 for (int i = 0; i < childJobIds.length; i++) {
                     int childJobId = (childJobIds[i]!=null && childJobIds[i].trim().length()>0 && isNumeric(childJobIds[i]))?Integer.valueOf(childJobIds[i]):-1;
                     if (childJobId > 0) {
-
+                        // 作为子任务进行调度
                         JobTriggerPoolHelper.trigger(childJobId, TriggerTypeEnum.PARENT, -1, null, null, null);
                         ReturnT<String> triggerChildResult = ReturnT.SUCCESS;
 

@@ -20,6 +20,7 @@ import java.util.List;
 
 /**
  * Created by xuxueli on 17/5/10.
+ * 我们自己的项目 调用 web的路由
  */
 @Controller
 @RequestMapping("/api")
@@ -53,13 +54,17 @@ public class JobApiController {
             return new ReturnT<String>(ReturnT.FAIL_CODE, "The access token is wrong.");
         }
 
-        // services mapping
+        // todo 执行器执行完任务后，回调任务结果时使用
         if ("callback".equals(uri)) {
             List<HandleCallbackParam> callbackParamList = GsonTool.fromJson(data, List.class, HandleCallbackParam.class);
             return adminBiz.callback(callbackParamList);
+
+            // todo 执行器注册时使用，调度中心会实时感知注册成功的执行器并发起任务调度
         } else if ("registry".equals(uri)) {
             RegistryParam registryParam = GsonTool.fromJson(data, RegistryParam.class);
             return adminBiz.registry(registryParam);
+
+            // todo 执行器注册摘除时使用，注册摘除后的执行器不参与任务调度与执行
         } else if ("registryRemove".equals(uri)) {
             RegistryParam registryParam = GsonTool.fromJson(data, RegistryParam.class);
             return adminBiz.registryRemove(registryParam);

@@ -12,9 +12,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * job log report helper
  *
- * @author xuxueli 2019-11-22
+ * 清除过期的日志，根据yml里面配置的过期时间
  */
 public class JobLogReportHelper {
     private static Logger logger = LoggerFactory.getLogger(JobLogReportHelper.class);
@@ -27,23 +26,19 @@ public class JobLogReportHelper {
 
     private Thread logrThread;
     private volatile boolean toStop = false;
+    // 创建日志报告线程对象
     public void start(){
         logrThread = new Thread(new Runnable() {
 
             @Override
             public void run() {
-
-                // last clean log time
+                // 上次清理日志的时间
                 long lastCleanLogTime = 0;
-
-
                 while (!toStop) {
-
-                    // 1、log-report refresh: refresh log report in 3 days
+                    // 1、日志报表刷新:3天刷新日志报表  xxl_job_log_report
                     try {
-
+                        // 遍历3天，每次遍历一天的数据
                         for (int i = 0; i < 3; i++) {
-
                             // today
                             Calendar itemDay = Calendar.getInstance();
                             itemDay.add(Calendar.DAY_OF_MONTH, -i);
@@ -52,6 +47,7 @@ public class JobLogReportHelper {
                             itemDay.set(Calendar.SECOND, 0);
                             itemDay.set(Calendar.MILLISECOND, 0);
 
+                            // 从一天的 0点开始
                             Date todayFrom = itemDay.getTime();
 
                             itemDay.set(Calendar.HOUR_OF_DAY, 23);
@@ -61,18 +57,25 @@ public class JobLogReportHelper {
 
                             Date todayTo = itemDay.getTime();
 
-                            // refresh log-report every minute
+                            // 每分钟刷新一次日志报告
                             XxlJobLogReport xxlJobLogReport = new XxlJobLogReport();
+                            // 任务触发日期
                             xxlJobLogReport.setTriggerDay(todayFrom);
                             xxlJobLogReport.setRunningCount(0);
                             xxlJobLogReport.setSucCount(0);
                             xxlJobLogReport.setFailCount(0);
 
+                            //获取 从一天的0点到24点的数据 xxl_job_log
+                            //调度次数，调度成功正在执行的次数，执行成功的次数
                             Map<String, Object> triggerCountMap = XxlJobAdminConfig.getAdminConfig().getXxlJobLogDao().findLogReport(todayFrom, todayTo);
                             if (triggerCountMap!=null && triggerCountMap.size()>0) {
+                                // 日志个数
                                 int triggerDayCount = triggerCountMap.containsKey("triggerDayCount")?Integer.valueOf(String.valueOf(triggerCountMap.get("triggerDayCount"))):0;
+                                // 正在运行的个数
                                 int triggerDayCountRunning = triggerCountMap.containsKey("triggerDayCountRunning")?Integer.valueOf(String.valueOf(triggerCountMap.get("triggerDayCountRunning"))):0;
+                                // 成功的个数
                                 int triggerDayCountSuc = triggerCountMap.containsKey("triggerDayCountSuc")?Integer.valueOf(String.valueOf(triggerCountMap.get("triggerDayCountSuc"))):0;
+                                // 失败个数
                                 int triggerDayCountFail = triggerDayCount - triggerDayCountRunning - triggerDayCountSuc;
 
                                 xxlJobLogReport.setRunningCount(triggerDayCountRunning);
@@ -80,8 +83,9 @@ public class JobLogReportHelper {
                                 xxlJobLogReport.setFailCount(triggerDayCountFail);
                             }
 
-                            // do refresh
+                            // 根据触发时间 更新数据库
                             int ret = XxlJobAdminConfig.getAdminConfig().getXxlJobLogReportDao().update(xxlJobLogReport);
+                            // 如果不存在就新建保存
                             if (ret < 1) {
                                 XxlJobAdminConfig.getAdminConfig().getXxlJobLogReportDao().save(xxlJobLogReport);
                             }
@@ -93,29 +97,35 @@ public class JobLogReportHelper {
                         }
                     }
 
-                    // 2、log-clean: switch open & once each day
+                    // 2、日志清理：打开开关，每天一次
+                    // getLogretentiondays() 从yml里面 获取自己配置的 日志保留天数
+                    // 当前时间 距离上次清除时间 大于一天
                     if (XxlJobAdminConfig.getAdminConfig().getLogretentiondays()>0
                             && System.currentTimeMillis() - lastCleanLogTime > 24*60*60*1000) {
 
-                        // expire-time
+                        // 根据保留天数，获取过期日期
+                        // 小于 expiredDay 的都删除
                         Calendar expiredDay = Calendar.getInstance();
                         expiredDay.add(Calendar.DAY_OF_MONTH, -1 * XxlJobAdminConfig.getAdminConfig().getLogretentiondays());
                         expiredDay.set(Calendar.HOUR_OF_DAY, 0);
                         expiredDay.set(Calendar.MINUTE, 0);
                         expiredDay.set(Calendar.SECOND, 0);
                         expiredDay.set(Calendar.MILLISECOND, 0);
+                        // 清除这个日期之前的数据
                         Date clearBeforeTime = expiredDay.getTime();
 
-                        // clean expired log
+                        // 清楚过期日志
                         List<Long> logIds = null;
                         do {
+                            // 根据时间查询要清除的日志xxl_job_log
                             logIds = XxlJobAdminConfig.getAdminConfig().getXxlJobLogDao().findClearLogIds(0, 0, clearBeforeTime, 0, 1000);
                             if (logIds!=null && logIds.size()>0) {
+                                // 清除日志
                                 XxlJobAdminConfig.getAdminConfig().getXxlJobLogDao().clearLog(logIds);
                             }
                         } while (logIds!=null && logIds.size()>0);
 
-                        // update clean time
+                        // 更新最近清除时间
                         lastCleanLogTime = System.currentTimeMillis();
                     }
 
@@ -138,15 +148,18 @@ public class JobLogReportHelper {
         logrThread.start();
     }
 
+    // 中断当前线程，并把当前线程放到任务队列里面
     public void toStop(){
         toStop = true;
         // interrupt and wait
         logrThread.interrupt();
         try {
+            // 就是让调用该方法的thread在完成run方法里面的部分后，再执行join方法后面的代码
             logrThread.join();
         } catch (InterruptedException e) {
             logger.error(e.getMessage(), e);
         }
     }
+
 
 }

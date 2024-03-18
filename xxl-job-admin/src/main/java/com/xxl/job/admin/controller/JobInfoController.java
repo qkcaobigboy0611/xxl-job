@@ -97,7 +97,8 @@ public class JobInfoController {
 			throw new RuntimeException(I18nUtil.getString("system_permission_limit") + "[username="+ loginUser.getUsername() +"]");
 		}
 	}
-	
+
+	// 分页查询任务List
 	@RequestMapping("/pageList")
 	@ResponseBody
 	public Map<String, Object> pageList(@RequestParam(required = false, defaultValue = "0") int start,  
@@ -136,7 +137,14 @@ public class JobInfoController {
 	public ReturnT<String> start(int id) {
 		return xxlJobService.start(id);
 	}
-	
+
+	/**
+	 * 服务端启动流程
+	 * @param id
+	 * @param executorParam
+	 * @param addressList
+	 * @return
+	 */
 	@RequestMapping("/trigger")
 	@ResponseBody
 	//@PermissionLimit(limit = false)

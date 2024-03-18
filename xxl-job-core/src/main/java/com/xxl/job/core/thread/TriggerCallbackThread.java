@@ -21,7 +21,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Created by xuxueli on 16/7/22.
+ * 触发回调函数 线程，该线程主要是任务执行器执行完后，将结果回调给调度中心
+ * 具体看主动触发--》客户端回调服务端
  */
 public class TriggerCallbackThread {
     private static Logger logger = LoggerFactory.getLogger(TriggerCallbackThread.class);
@@ -32,9 +33,10 @@ public class TriggerCallbackThread {
     }
 
     /**
-     * job results callback queue
+     * 本地的缓存队列，作业结果回调队列
      */
     private LinkedBlockingQueue<HandleCallbackParam> callBackQueue = new LinkedBlockingQueue<HandleCallbackParam>();
+    // 将回调信息放到队列里面
     public static void pushCallBack(HandleCallbackParam callback){
         getInstance().callBackQueue.add(callback);
         logger.debug(">>>>>>>>>>> xxl-job, push callback request, logId:{}", callback.getLogId());
@@ -60,18 +62,23 @@ public class TriggerCallbackThread {
             @Override
             public void run() {
 
-                // normal callback
+                // 正常调用
                 while(!toStop){
                     try {
+                        //消费其中的 一个 回调函数信息
                         HandleCallbackParam callback = getInstance().callBackQueue.take();
                         if (callback != null) {
 
-                            // callback list param
+                            // 回调参数列表
                             List<HandleCallbackParam> callbackParamList = new ArrayList<HandleCallbackParam>();
+
+                            // take方法是逐一获取队列中的元素，为空就阻塞，
+                            // 而drainTo是批量获取，为空不阻塞
+                            // todo drainTo实现将当前阻塞队列中的信息全部转移到List中
                             int drainToNum = getInstance().callBackQueue.drainTo(callbackParamList);
                             callbackParamList.add(callback);
 
-                            // callback, will retry if error
+                            // 回调函数，如果发生错误将重试
                             if (callbackParamList!=null && callbackParamList.size()>0) {
                                 doCallback(callbackParamList);
                             }
@@ -83,7 +90,7 @@ public class TriggerCallbackThread {
                     }
                 }
 
-                // last callback
+                // last callback 当前项目停止的时候，调用这个
                 try {
                     List<HandleCallbackParam> callbackParamList = new ArrayList<HandleCallbackParam>();
                     int drainToNum = getInstance().callBackQueue.drainTo(callbackParamList);
@@ -104,12 +111,13 @@ public class TriggerCallbackThread {
         triggerCallbackThread.start();
 
 
-        // retry
+        // 重试
         triggerRetryCallbackThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 while(!toStop){
                     try {
+                        // 重试函数
                         retryFailCallbackFile();
                     } catch (Exception e) {
                         if (!toStop) {
@@ -158,15 +166,19 @@ public class TriggerCallbackThread {
 
     /**
      * do callback, will retry if error
+     * 我们的项目里面  任务执行完成，执行错误的话，有错误结果，都在list里面
+     * 有一个执行成功，就执行成功了
      * @param callbackParamList
      */
     private void doCallback(List<HandleCallbackParam> callbackParamList){
         boolean callbackRet = false;
-        // callback, will retry if error
+        // 获取web 服务器地址与令牌的 list集合
         for (AdminBiz adminBiz: XxlJobExecutor.getAdminBizList()) {
             try {
+                // 返回的是 调用远程之后得到的结果数据
                 ReturnT<String> callbackResult = adminBiz.callback(callbackParamList);
                 if (callbackResult!=null && ReturnT.SUCCESS_CODE == callbackResult.getCode()) {
+                    // 将回调函数信息添加到日志文件中
                     callbackLog(callbackParamList, "<br>----------- xxl-job job callback finish.");
                     callbackRet = true;
                     break;
@@ -183,7 +195,7 @@ public class TriggerCallbackThread {
     }
 
     /**
-     * callback log
+     * callback log 将每个回调函数信息添加到log文件里面
      */
     private void callbackLog(List<HandleCallbackParam> callbackParamList, String logContent){
         for (HandleCallbackParam callbackParam: callbackParamList) {
@@ -199,11 +211,15 @@ public class TriggerCallbackThread {
     }
 
 
-    // ---------------------- fail-callback file ----------------------
+    // ---------------------- fail-callback file 失败回调文件----------------------
 
     private static String failCallbackFilePath = XxlJobFileAppender.getLogPath().concat(File.separator).concat("callbacklog").concat(File.separator);
     private static String failCallbackFileName = failCallbackFilePath.concat("xxl-job-callback-{x}").concat(".log");
 
+    /**
+     * 添加回调失败信息 到 log文件
+     * @param callbackParamList
+     */
     private void appendFailCallbackFile(List<HandleCallbackParam> callbackParamList){
         // valid
         if (callbackParamList==null || callbackParamList.size()==0) {
@@ -225,6 +241,7 @@ public class TriggerCallbackThread {
         FileUtil.writeFileContent(callbackLogFile, callbackParamList_bytes);
     }
 
+    // 重试  添加回调失败信息  到  log文件里面
     private void retryFailCallbackFile(){
 
         // valid
@@ -241,6 +258,7 @@ public class TriggerCallbackThread {
 
         // load and clear file, retry
         for (File callbaclLogFile: callbackLogPath.listFiles()) {
+            // 读取每一个文件的内容
             byte[] callbackParamList_bytes = FileUtil.readFileContent(callbaclLogFile);
 
             // avoid empty file
@@ -251,6 +269,7 @@ public class TriggerCallbackThread {
 
             List<HandleCallbackParam> callbackParamList = (List<HandleCallbackParam>) JdkSerializeTool.deserialize(callbackParamList_bytes, List.class);
 
+            // 删除
             callbaclLogFile.delete();
             doCallback(callbackParamList);
         }
